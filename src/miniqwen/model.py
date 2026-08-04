@@ -1,23 +1,20 @@
+import json
 import math
 import os
-import json
-from typing import TYPE_CHECKING
+from collections.abc import Generator
+from os import PathLike
 
 import torch
-import torch.nn as nn
 from safetensors import safe_open
+from torch import nn
 
 from .cache import Cache
 from .tokenizer import Tokenizer
 from .transformer import DecoderLayer, LayerNorm
 
-if TYPE_CHECKING:
-    from collections.abc import Generator
-    from os import PathLike
-
 
 class RoPE(nn.Module):
-    def __init__(self, theta: int | float, head_dim: int):
+    def __init__(self, theta: float, head_dim: int):
         super().__init__()
         assert head_dim % 2 == 0
 
@@ -138,7 +135,7 @@ class Model(nn.Module):
 
 class MiniQwen(nn.Module):
     @staticmethod
-    def from_pretrained(model_dir: "PathLike") -> "MiniQwen":
+    def from_pretrained(model_dir: PathLike) -> "MiniQwen":
         with open(os.path.join(model_dir, "config.json"), "r", encoding="utf-8") as f:
             config = json.load(f)
         with open(os.path.join(model_dir, "generation_config.json"), "r", encoding="utf-8") as f:
@@ -162,7 +159,7 @@ class MiniQwen(nn.Module):
         )
 
         with safe_open(os.path.join(model_dir, "model.safetensors"), framework="pt") as f:
-            sdict = {key: f.get_tensor(key) for key in f.keys()}
+            sdict = {key: f.get_tensor(key) for key in f.keys()}  # noqa: SIM118
             module.load_state_dict(sdict)
 
         return module
@@ -206,7 +203,7 @@ class MiniQwen(nn.Module):
         )
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
 
-    def generate(self, prompt: str, max_generate_len: int = 1000) -> "Generator[str]":
+    def generate(self, prompt: str, max_generate_len: int = 1000) -> Generator[str]:
         device = self.lm_head.weight.device
 
         input_ids = self._tokenizer.tokenize_for_chat(prompt).to(device)

@@ -1,11 +1,10 @@
+import os
 from argparse import ArgumentParser
 from time import time
-import os
 
 import torch
 
 from miniqwen.model import MiniQwen
-
 
 parser = ArgumentParser(description="MiniQwen REPL")
 parser.add_argument("-d", "--device", default="cpu", help="Device to use")

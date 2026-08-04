@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 
 
@@ -25,7 +23,7 @@ class LayerCache:
 
     @staticmethod
     def _concat_with_cached(
-        cached: Optional[torch.Tensor], x: torch.Tensor
+        cached: torch.Tensor | None, x: torch.Tensor
     ) -> torch.Tensor:
         # cached :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
         # x :: (batch_size, num_attention_heads, seq_len, head_dim)

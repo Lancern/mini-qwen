@@ -1,14 +1,11 @@
-from dataclasses import dataclass
 import itertools
 import json
 import os
+from dataclasses import dataclass
+from os import PathLike
+
 import regex
-from typing import Optional, TYPE_CHECKING
-
 import torch
-
-if TYPE_CHECKING:
-    from os import PathLike
 
 
 @dataclass
@@ -37,10 +34,10 @@ class Vocab:
     def special_tokens(self) -> list[TokenInfo]:
         return self._special_tokens
 
-    def get_token_id(self, content: str) -> Optional[int]:
+    def get_token_id(self, content: str) -> int | None:
         return self._content_to_id.get(content)
 
-    def get_token_info(self, token_id: int) -> Optional[TokenInfo]:
+    def get_token_info(self, token_id: int) -> TokenInfo | None:
         if token_id >= len(self._tokens):
             return None
         return self._tokens[token_id]
@@ -215,7 +212,7 @@ class ByteCodec:
         self._c2b: dict[str, int] = {v: k for k, v in self._b2c.items()}
 
     def encode(self, raw: str) -> str:
-        return "".join((self._b2c[b] for b in raw.encode("utf-8")))
+        return "".join(self._b2c[b] for b in raw.encode("utf-8"))
 
     def decode(self, encoded: str) -> str:
-        return bytes((self._c2b[c] for c in encoded)).decode("utf-8")
+        return bytes(self._c2b[c] for c in encoded).decode("utf-8")

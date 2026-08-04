@@ -1,10 +1,7 @@
-from typing import Optional, TYPE_CHECKING
-
 import torch
-import torch.nn as nn
+from torch import nn
 
-if TYPE_CHECKING:
-    from .cache import Cache, LayerCache
+from .cache import Cache, LayerCache
 
 
 class SelfAttention(nn.Module):
@@ -15,7 +12,7 @@ class SelfAttention(nn.Module):
         num_attention_heads: int,
         num_kv_heads: int,
         layernorm_eps: float,
-        cache: Optional["LayerCache"] = None,
+        cache: LayerCache | None = None,
     ):
         super().__init__()
 
@@ -181,7 +178,7 @@ class DecoderLayer(nn.Module):
         num_kv_heads: int,
         intermediate_size: int,
         layernorm_eps: float,
-        cache: Optional["Cache"] = None,
+        cache: Cache | None = None,
     ):
         super().__init__()
 
