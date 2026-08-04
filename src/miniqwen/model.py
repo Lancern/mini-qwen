@@ -10,7 +10,7 @@ from torch import nn
 
 from .cache import Cache
 from .tokenizer import Tokenizer
-from .transformer import DecoderLayer, LayerNorm
+from .transformer import DecoderLayer, RMSNorm
 
 
 class RoPE(nn.Module):
@@ -102,7 +102,7 @@ class Model(nn.Module):
                 for idx in range(num_hidden_layers)
             ]
         )
-        self.norm = LayerNorm(hidden_size, rms_norm_eps)
+        self.norm = RMSNorm(hidden_size, rms_norm_eps)
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         # input_ids :: (batch_size, seq_len)

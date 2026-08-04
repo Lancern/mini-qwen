@@ -27,11 +27,11 @@ class SelfAttention(nn.Module):
         self.k_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
         self.v_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
         self.o_proj = nn.Linear(num_attention_heads * head_dim, hidden_size, bias=False)
-        self.q_norm = LayerNorm(
+        self.q_norm = RMSNorm(
             head_dim,
             layernorm_eps,
         )
-        self.k_norm = LayerNorm(
+        self.k_norm = RMSNorm(
             head_dim,
             layernorm_eps,
         )
@@ -149,7 +149,7 @@ class MLP(nn.Module):
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 
-class LayerNorm(nn.Module):
+class RMSNorm(nn.Module):
     def __init__(self, hidden_size: int, eps: float):
         super().__init__()
 
@@ -199,11 +199,11 @@ class DecoderLayer(nn.Module):
             cache=self._cache,
         )
         self.mlp = MLP(hidden_size, intermediate_size)
-        self.input_layernorm = LayerNorm(
+        self.input_layernorm = RMSNorm(
             hidden_size,
             layernorm_eps,
         )
-        self.post_attention_layernorm = LayerNorm(
+        self.post_attention_layernorm = RMSNorm(
             hidden_size,
             layernorm_eps,
         )
