@@ -1,12 +1,16 @@
 import torch
+from jaxtyping import Float
+from torch import Tensor
 
 
 class LayerCache:
     def __init__(self):
-        self._cached_k = None
-        self._cached_v = None
-        # cached_k :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
-        # cached_v :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
+        self._cached_k: (
+            Float[Tensor, "batch num_attn_heads kv_seq_len head_dim"] | None
+        ) = None
+        self._cached_v: (
+            Float[Tensor, "batch num_attn_heads kv_seq_len head_dim"] | None
+        ) = None
 
     @property
     def cached_seq_len(self) -> int:
@@ -15,19 +19,22 @@ class LayerCache:
         return self._cached_k.shape[2]
 
     def update_and_concat(
-        self, k: torch.Tensor, v: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        self,
+        k: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+        v: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+    ) -> tuple[
+        Float[Tensor, "batch num_attn_heads kv_seq_len+seq_len head_dim"],
+        Float[Tensor, "batch num_attn_heads kv_seq_len+seq_len head_dim"],
+    ]:
         self._cached_k = LayerCache._concat_with_cached(self._cached_k, k)
         self._cached_v = LayerCache._concat_with_cached(self._cached_v, v)
         return self._cached_k, self._cached_v
 
     @staticmethod
     def _concat_with_cached(
-        cached: torch.Tensor | None, x: torch.Tensor
-    ) -> torch.Tensor:
-        # cached :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
-        # x :: (batch_size, num_attention_heads, seq_len, head_dim)
-        # ret :: (batch_size, num_attention_heads, kv_seq_len+seq_len, head_dim)
+        cached: Float[Tensor, "batch num_attn_heads kv_seq_len head_dim"] | None,
+        x: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+    ) -> Float[Tensor, "batch num_attn_heads kv_seq_len+seq_len head_dim"]:
         if cached is None:
             return x
         return torch.cat((cached, x), dim=2)

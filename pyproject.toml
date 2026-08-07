@@ -8,6 +8,8 @@ authors = [
 license-files = ["LICENSE"]
 
 dependencies = [
+    "einops",
+    "jaxtyping",
     "numpy",
     "regex",
     "safetensors",

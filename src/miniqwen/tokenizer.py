@@ -6,6 +6,8 @@ from os import PathLike
 
 import regex
 import torch
+from jaxtyping import Int
+from torch import Tensor
 
 
 @dataclass
@@ -84,7 +86,7 @@ class Tokenizer:
 
     def tokenize(
         self, text: str, identify_special=True, return_tensor=True
-    ) -> list[int] | torch.Tensor:
+    ) -> list[int] | Int[Tensor, "1 seq_len"]:
         fragments: list[str | int] = [text]
         if identify_special:
             self._identify_specials(fragments)
@@ -107,7 +109,7 @@ class Tokenizer:
             return torch.tensor([fragments])
         return fragments
 
-    def tokenize_for_chat(self, prompt: str) -> torch.Tensor:
+    def tokenize_for_chat(self, prompt: str) -> Int[Tensor, "1 seq_len"]:
         template = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         return self.tokenize(template)
 

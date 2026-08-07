@@ -1,5 +1,6 @@
 import torch
-from torch import nn
+from jaxtyping import Float
+from torch import Tensor, nn
 
 from .cache import Cache, LayerCache
 
@@ -37,10 +38,13 @@ class SelfAttention(nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, position_embeddings: tuple[torch.Tensor, torch.Tensor]
-    ):
-        # x :: (batch_size, seq_len, hidden_size)
-
+        self,
+        x: Float[Tensor, "batch seq_len hidden_size"],
+        position_embeddings: tuple[
+            Float[Tensor, "batch seq_len head_dim"],
+            Float[Tensor, "batch seq_len head_dim"],
+        ],
+    ) -> Float[Tensor, "batch seq_len hidden_size"]:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self._head_dim)
         # hidden_shape = (batch_size, seq_len, -1, self._head_dim)
@@ -66,14 +70,18 @@ class SelfAttention(nn.Module):
         return attn_output
 
     def _rotary_pos_embed(
-        self, q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # q :: (batch_size, num_attention_heads, seq_len, head_dim)
-        # k :: (batch_size, num_kv_heads, seq_len, head_dim)
-        # cos, sin :: (batch_size, seq_len, head_dim)
-
-        def rotate_half(x):
-            # x :: (..., d)
+        self,
+        q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+        k: Float[Tensor, "batch num_kv_heads seq_len head_dim"],
+        cos: Float[Tensor, "batch seq_len head_dim"],
+        sin: Float[Tensor, "batch seq_len head_dim"],
+    ) -> tuple[
+        Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+        Float[Tensor, "batch num_kv_heads seq_len head_dim"],
+    ]:
+        def rotate_half(
+            x: Float[Tensor, "... head_dim"],
+        ) -> Float[Tensor, "... head_dim"]:
             x1 = x[..., : x.shape[-1] // 2]
             x2 = x[..., x.shape[-1] // 2 :]
             # x1, x2 :: (..., d / 2)
@@ -87,12 +95,11 @@ class SelfAttention(nn.Module):
         return q_embed, k_embed
 
     def _attend(
-        self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
-    ) -> torch.Tensor:
-        # q :: (batch_size, num_attention_heads, seq_len, head_dim)
-        # k :: (batch_size, num_kv_heads, kv_seq_len, head_dim)
-        # v :: (batch_size, num_kv_heads, kv_seq_len, head_dim)
-
+        self,
+        q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+        k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
+        v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
+    ) -> Float[Tensor, "batch seq_len num_attn_heads head_dim"]:
         k = self._expand_kv(k)
         v = self._expand_kv(v)
         # k :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
@@ -112,13 +119,11 @@ class SelfAttention(nn.Module):
         )
         # attn_output :: (batch_size, num_attention_heads, seq_len, head_dim)
 
-        # ret :: (batch_size, seq_len, num_attention_heads, head_dim)
         return attn_output.transpose(1, 2).contiguous()
 
-    def _expand_kv(self, x: torch.Tensor) -> torch.Tensor:
-        # x :: (batch_size, num_kv_heads, seq_len, head_dim)
-        # ret :: (batch_size, num_kv_heads * num_kv_groups, seq_len, head_dim)
-
+    def _expand_kv(
+        self, x: Float[Tensor, "batch num_kv_heads seq_len head_dim"]
+    ) -> Float[Tensor, "batch num_attn_heads seq_len head_dim"]:
         batch_size, num_kv_heads, seq_len, head_dim = x.shape
 
         if self._num_kv_groups <= 1:
@@ -143,9 +148,9 @@ class MLP(nn.Module):
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
         self.act_fn = nn.SiLU()
 
-    def forward(self, x: torch.Tensor):
-        # x :: (batch_size, seq_len, hidden_size)
-        # ret :: (batch_size, seq_len, hidden_size)
+    def forward(
+        self, x: Float[Tensor, "batch seq_len hidden_size"]
+    ) -> Float[Tensor, "batch seq_len hidden_size"]:
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 
@@ -158,9 +163,9 @@ class RMSNorm(nn.Module):
 
         self.weight = nn.Parameter(torch.ones(hidden_size))
 
-    def forward(self, x: torch.Tensor):
-        # x :: (batch_size, seq_len, hidden_size)
-        # ret :: (batch_size, seq_len, hidden_size)
+    def forward(
+        self, x: Float[Tensor, "... hidden_size"]
+    ) -> Float[Tensor, "... hidden_size"]:
         input_dtype = x.dtype
         x = x.float()
         var = x.pow(2).mean(-1, keepdim=True)
@@ -209,10 +214,13 @@ class DecoderLayer(nn.Module):
         )
 
     def forward(
-        self, x: torch.Tensor, position_embeddings: tuple[torch.Tensor, torch.Tensor]
-    ):
-        # x :: (batch_size, seq_len, hidden_size)
-        # ret :: (batch_size, seq_len, hidden_size)
+        self,
+        x: Float[Tensor, "batch seq_len hidden_size"],
+        position_embeddings: tuple[
+            Float[Tensor, "batch seq_len head_dim"],
+            Float[Tensor, "batch seq_len head_dim"],
+        ],
+    ) -> Float[Tensor, "batch seq_len hidden_size"]:
         residual = x
 
         x = self.input_layernorm(x)

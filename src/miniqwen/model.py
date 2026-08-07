@@ -5,8 +5,9 @@ from collections.abc import Generator
 from os import PathLike
 
 import torch
+from jaxtyping import Float, Int
 from safetensors import safe_open
-from torch import nn
+from torch import Tensor, nn
 
 from .cache import Cache
 from .tokenizer import Tokenizer
@@ -28,14 +29,13 @@ class RoPE(nn.Module):
         )
 
     def __call__(
-        self, x: torch.Tensor, position_ids: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # x :: (batch_size, seq_len, head_dim)
-        # position_ids :: (batch_size, num_pos)
-        # ret :: tuple
-        #   => ret[0] :: (batch_size, num_pos, head_dim)
-        #   => ret[1] :: (batch_size, num_pos, head_dim)
-
+        self,
+        x: Float[Tensor, "batch seq_len hidden_size"],
+        position_ids: Int[Tensor, "batch num_pos"],
+    ) -> tuple[
+        Float[Tensor, "batch num_pos head_dim"],
+        Float[Tensor, "batch num_pos head_dim"],
+    ]:
         batch_size = x.shape[0]
 
         inv_freq_expanded = (
@@ -104,10 +104,9 @@ class Model(nn.Module):
         )
         self.norm = RMSNorm(hidden_size, rms_norm_eps)
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # input_ids :: (batch_size, seq_len)
-        # ret :: (batch_size, seq_len, vocab_size)
-
+    def forward(
+        self, input_ids: Int[Tensor, "batch seq_len"]
+    ) -> Float[Tensor, "batch seq_len hidden_size"]:
         hidden_state = self.embed_tokens(input_ids)
         # hidden_state :: (batch_size, seq_len, hidden_size)
 
@@ -123,8 +122,8 @@ class Model(nn.Module):
         # position_ids :: (1, seq_len)
         position_embeddings = self._rope(hidden_state, position_ids)
         # position_embeddings :: tuple
-        #   => position_embeddings[0] :: (batch_size, seq_len, hidden_size)
-        #   => position_embeddings[1] :: (batch_size, seq_len, hidden_size)
+        #   => position_embeddings[0] :: (batch_size, seq_len, head_dim)
+        #   => position_embeddings[1] :: (batch_size, seq_len, head_dim)
 
         for decoder_layer in self.layers:
             hidden_state = decoder_layer(hidden_state, position_embeddings)
@@ -224,10 +223,9 @@ class MiniQwen(nn.Module):
                     (input_ids, torch.tensor([[output_id]], device=device)), dim=1
                 )
 
-    def generate_once(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # input_ids :: (batch_size, seq_len)
-        # ret :: (batch_size, 1)
-
+    def generate_once(
+        self, input_ids: Int[Tensor, "batch seq_len"]
+    ) -> Int[Tensor, "batch 1"]:
         logits = self(input_ids)
         # logits :: (batch_size, seq_len, vocab_size)
 
@@ -239,13 +237,14 @@ class MiniQwen(nn.Module):
 
         return torch.multinomial(probs, num_samples=1)
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        # input_ids :: (batch_size, seq_len)
+    def forward(
+        self, input_ids: Int[Tensor, "batch seq_len"]
+    ) -> Float[Tensor, "batch seq_len vocab_size"]:
         return self.lm_head(self.model(input_ids))
 
-    def _apply_top_k(self, logits: torch.Tensor) -> torch.Tensor:
-        # logits :: (batch_size, vocab_size)
-
+    def _apply_top_k(
+        self, logits: Float[Tensor, "batch vocab_size"]
+    ) -> Float[Tensor, "batch vocab_size"]:
         min_top_k_prob = torch.topk(logits, self._top_k)[0][..., -1, None]
         # min_top_k_prob :: (batch_size, 1)
         mask = logits < min_top_k_prob
@@ -253,9 +252,9 @@ class MiniQwen(nn.Module):
 
         return logits.masked_fill(mask, -math.inf)
 
-    def _apply_top_p(self, logits: torch.Tensor) -> torch.Tensor:
-        # logits :: (batch_size, vocab_size)
-
+    def _apply_top_p(
+        self, logits: Float[Tensor, "batch vocab_size"]
+    ) -> Float[Tensor, "batch vocab_size"]:
         sorted_logits, sorted_indecies = torch.sort(logits, descending=False)
         # sorted_logits :: (batch_size, vocab_size)
         # sorted_indecies :: (batch_size, vocab_size)
