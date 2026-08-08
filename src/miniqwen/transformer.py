@@ -1,6 +1,7 @@
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
+from torch.cuda import nvtx
 
 from .cache import Cache, LayerCache
 from .rope import RoPE
@@ -40,6 +41,7 @@ class SelfAttention(nn.Module):
             layernorm_eps,
         )
 
+    @nvtx.range("SelfAttention.forward")
     def forward(
         self,
         x: Float[Tensor, "batch seq_len hidden_size"],
@@ -68,6 +70,7 @@ class SelfAttention(nn.Module):
 
         return attn_output
 
+    @nvtx.range("SelfAttention._attend")
     def _attend(
         self,
         q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
@@ -122,6 +125,7 @@ class MLP(nn.Module):
         self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
         self.act_fn = nn.SiLU()
 
+    @nvtx.range("MLP.forward")
     def forward(
         self, x: Float[Tensor, "batch seq_len hidden_size"]
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
@@ -137,6 +141,7 @@ class RMSNorm(nn.Module):
 
         self.weight = nn.Parameter(torch.ones(hidden_size))
 
+    @nvtx.range("RMSNorm.forward")
     def forward(
         self, x: Float[Tensor, "... hidden_size"]
     ) -> Float[Tensor, "... hidden_size"]:
@@ -189,6 +194,7 @@ class DecoderLayer(nn.Module):
             layernorm_eps,
         )
 
+    @nvtx.range("DecoderLayer.forward")
     def forward(
         self,
         x: Float[Tensor, "batch seq_len hidden_size"],

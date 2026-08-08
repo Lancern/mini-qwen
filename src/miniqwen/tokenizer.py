@@ -8,6 +8,7 @@ import regex
 import torch
 from jaxtyping import Int
 from torch import Tensor
+from torch.cuda import nvtx
 
 
 @dataclass
@@ -84,6 +85,7 @@ class Tokenizer:
     def eos(self) -> int:
         return self._eos
 
+    @nvtx.range("Tokenizer.tokenize")
     def tokenize(
         self, text: str, identify_special=True, return_tensor=True
     ) -> list[int] | Int[Tensor, "1 seq_len"]:
@@ -113,6 +115,7 @@ class Tokenizer:
         template = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         return self.tokenize(template)
 
+    @nvtx.range("Tokenizer.decode")
     def decode(self, token_id: int, skip_special: bool = True) -> str:
         ti = self._vocab.get_token_info(token_id)
         if ti is None:

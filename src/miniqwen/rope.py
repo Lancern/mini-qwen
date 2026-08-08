@@ -1,6 +1,7 @@
 import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
+from torch.cuda import nvtx
 
 
 class RoPE(nn.Module):
@@ -19,6 +20,7 @@ class RoPE(nn.Module):
         self.cos = nn.Buffer(emb.cos(), persistent=False)
         self.sin = nn.Buffer(emb.sin(), persistent=False)
 
+    @nvtx.range("RoPE.forward")
     def forward(
         self,
         q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],

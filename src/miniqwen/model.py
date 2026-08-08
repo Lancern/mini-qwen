@@ -8,6 +8,7 @@ import torch
 from jaxtyping import Float, Int
 from safetensors import safe_open
 from torch import Tensor, nn
+from torch.cuda import nvtx
 
 from .cache import Cache
 from .rope import RoPE
@@ -59,6 +60,7 @@ class Model(nn.Module):
         )
         self.norm = RMSNorm(hidden_size, rms_norm_eps)
 
+    @nvtx.range("Model.forward")
     def forward(
         self, input_ids: Int[Tensor, "batch seq_len"]
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
