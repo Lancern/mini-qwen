@@ -10,56 +10,9 @@ from safetensors import safe_open
 from torch import Tensor, nn
 
 from .cache import Cache
+from .rope import RoPE
 from .tokenizer import Tokenizer
 from .transformer import DecoderLayer, RMSNorm
-
-
-class RoPE(nn.Module):
-    def __init__(self, theta: float, head_dim: int):
-        super().__init__()
-        assert head_dim % 2 == 0
-
-        self._theta = theta
-
-        # inv_freq :: (head_dim / 2)
-        # inv_freq[i] = theta ** (-2i / head_dim)
-        self.inv_freq = nn.Buffer(
-            1.0 / (theta ** (torch.arange(0, head_dim, 2) / head_dim)),
-            persistent=False,
-        )
-
-    def __call__(
-        self,
-        x: Float[Tensor, "batch seq_len hidden_size"],
-        position_ids: Int[Tensor, "batch num_pos"],
-    ) -> tuple[
-        Float[Tensor, "batch num_pos head_dim"],
-        Float[Tensor, "batch num_pos head_dim"],
-    ]:
-        batch_size = x.shape[0]
-
-        inv_freq_expanded = (
-            self.inv_freq[None, :, None].float().expand(batch_size, -1, 1)
-        )
-        # inv_freq_expanded :: (batch_size, head_dim / 2, 1)
-
-        position_ids_expanded = position_ids[:, None, :].float()
-        # position_ids_expanded :: (batch_size, 1, num_pos)
-
-        with torch.autocast(device_type=x.device.type, enabled=False):
-            freqs = (
-                inv_freq_expanded.float() @ position_ids_expanded.float()
-            ).transpose(1, 2)
-            # freqs :: (batch_size, num_pos, head_dim / 2)
-
-            emb = torch.cat((freqs, freqs), dim=-1)
-            # emb :: (batch_size, num_pos, head_dim)
-
-            cos = emb.cos()
-            sin = emb.sin()
-            # cos, sin :: (batch_size, num_pos, head_dim)
-
-        return cos.to(x.dtype), sin.to(x.dtype)
 
 
 class Model(nn.Module):
@@ -67,6 +20,7 @@ class Model(nn.Module):
         self,
         vocab_size: int,
         rope_theta: float,
+        max_seq_len: int,
         hidden_size: int,
         num_hidden_layers: int,
         head_dim: int,
@@ -84,7 +38,7 @@ class Model(nn.Module):
         else:
             self._cache = None
 
-        self._rope = RoPE(rope_theta, head_dim)
+        self._rope = RoPE(rope_theta, head_dim, max_seq_len)
 
         self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
         self.layers = nn.ModuleList(
@@ -97,6 +51,7 @@ class Model(nn.Module):
                     num_key_value_heads,
                     intermediate_size,
                     rms_norm_eps,
+                    rope=self._rope,
                     cache=self._cache,
                 )
                 for idx in range(num_hidden_layers)
@@ -120,13 +75,9 @@ class Model(nn.Module):
             generated_seq_len, generated_seq_len + seq_len, device=hidden_state.device
         ).unsqueeze(0)
         # position_ids :: (1, seq_len)
-        position_embeddings = self._rope(hidden_state, position_ids)
-        # position_embeddings :: tuple
-        #   => position_embeddings[0] :: (batch_size, seq_len, head_dim)
-        #   => position_embeddings[1] :: (batch_size, seq_len, head_dim)
 
         for decoder_layer in self.layers:
-            hidden_state = decoder_layer(hidden_state, position_embeddings)
+            hidden_state = decoder_layer(hidden_state, position_ids)
             # hidden_state :: (batch_size, seq_len, hidden_size)
 
         return self.norm(hidden_state)
@@ -145,6 +96,7 @@ class MiniQwen(nn.Module):
             tokenizer=tokenizer,
             vocab_size=config["vocab_size"],
             rope_theta=config["rope_theta"],
+            max_seq_len=config["max_position_embeddings"],
             hidden_size=config["hidden_size"],
             num_hidden_layers=config["num_hidden_layers"],
             head_dim=config["head_dim"],
@@ -168,6 +120,7 @@ class MiniQwen(nn.Module):
         tokenizer: Tokenizer,
         vocab_size: int,
         rope_theta: float,
+        max_seq_len: int,
         hidden_size: int,
         num_hidden_layers: int,
         head_dim: int,
@@ -191,6 +144,7 @@ class MiniQwen(nn.Module):
         self.model = Model(
             vocab_size,
             rope_theta,
+            max_seq_len,
             hidden_size,
             num_hidden_layers,
             head_dim,

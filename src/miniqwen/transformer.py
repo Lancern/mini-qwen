@@ -1,8 +1,9 @@
 import torch
-from jaxtyping import Float
+from jaxtyping import Float, Int
 from torch import Tensor, nn
 
 from .cache import Cache, LayerCache
+from .rope import RoPE
 
 
 class SelfAttention(nn.Module):
@@ -13,6 +14,7 @@ class SelfAttention(nn.Module):
         num_attention_heads: int,
         num_kv_heads: int,
         layernorm_eps: float,
+        rope: RoPE,
         cache: LayerCache | None = None,
     ):
         super().__init__()
@@ -21,6 +23,7 @@ class SelfAttention(nn.Module):
         self._num_attention_heads = num_attention_heads
         self._num_kv_heads = num_kv_heads
         self._num_kv_groups = self._num_attention_heads // self._num_kv_heads
+        self._rope = rope
 
         self._cache = cache
 
@@ -40,10 +43,7 @@ class SelfAttention(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "batch seq_len hidden_size"],
-        position_embeddings: tuple[
-            Float[Tensor, "batch seq_len head_dim"],
-            Float[Tensor, "batch seq_len head_dim"],
-        ],
+        position_ids: Int[Tensor, "batch seq_len"],
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self._head_dim)
@@ -56,8 +56,7 @@ class SelfAttention(nn.Module):
         v_states = self.v_proj(x).view(hidden_shape).transpose(1, 2)
         # v_states :: (batch_size, num_kv_heads, seq_len, head_dim)
 
-        cos, sin = position_embeddings
-        q_states, k_states = self._rotary_pos_embed(q_states, k_states, cos, sin)
+        q_states, k_states = self._rope(q_states, k_states, position_ids)
 
         attn_output = self._attend(q_states, k_states, v_states)
         # attn_output :: (batch_size, seq_len, num_attention_heads, head_dim)
@@ -68,31 +67,6 @@ class SelfAttention(nn.Module):
         # attn_output :: (batch_size, seq_len, hidden_size)
 
         return attn_output
-
-    def _rotary_pos_embed(
-        self,
-        q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-        k: Float[Tensor, "batch num_kv_heads seq_len head_dim"],
-        cos: Float[Tensor, "batch seq_len head_dim"],
-        sin: Float[Tensor, "batch seq_len head_dim"],
-    ) -> tuple[
-        Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-        Float[Tensor, "batch num_kv_heads seq_len head_dim"],
-    ]:
-        def rotate_half(
-            x: Float[Tensor, "... head_dim"],
-        ) -> Float[Tensor, "... head_dim"]:
-            x1 = x[..., : x.shape[-1] // 2]
-            x2 = x[..., x.shape[-1] // 2 :]
-            # x1, x2 :: (..., d / 2)
-            return torch.cat((-x2, x1), dim=-1)
-
-        cos = cos.unsqueeze(1)
-        sin = sin.unsqueeze(1)
-        # cos, sin :: (batch_size, 1, seq_len, head_dim)
-        q_embed = (q * cos) + (rotate_half(q) * sin)
-        k_embed = (k * cos) + (rotate_half(k) * sin)
-        return q_embed, k_embed
 
     def _attend(
         self,
@@ -183,6 +157,7 @@ class DecoderLayer(nn.Module):
         num_kv_heads: int,
         intermediate_size: int,
         layernorm_eps: float,
+        rope: RoPE,
         cache: Cache | None = None,
     ):
         super().__init__()
@@ -201,6 +176,7 @@ class DecoderLayer(nn.Module):
             num_attention_heads,
             num_kv_heads,
             layernorm_eps,
+            rope=rope,
             cache=self._cache,
         )
         self.mlp = MLP(hidden_size, intermediate_size)
@@ -216,17 +192,14 @@ class DecoderLayer(nn.Module):
     def forward(
         self,
         x: Float[Tensor, "batch seq_len hidden_size"],
-        position_embeddings: tuple[
-            Float[Tensor, "batch seq_len head_dim"],
-            Float[Tensor, "batch seq_len head_dim"],
-        ],
+        position_ids: Int[Tensor, "batch seq_len"],
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
         residual = x
 
         x = self.input_layernorm(x)
         # x :: (batch_size, seq_len, hidden_size)
 
-        x = self.self_attn(x, position_embeddings)
+        x = self.self_attn(x, position_ids)
         x = x + residual
         # x :: (batch_size, seq_len, hidden_size)
 
