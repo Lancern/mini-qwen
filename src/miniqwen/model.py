@@ -88,7 +88,9 @@ class MiniQwen(nn.Module):
     def from_pretrained(model_dir: PathLike) -> "MiniQwen":
         with open(os.path.join(model_dir, "config.json"), "r", encoding="utf-8") as f:
             config = json.load(f)
-        with open(os.path.join(model_dir, "generation_config.json"), "r", encoding="utf-8") as f:
+        with open(
+            os.path.join(model_dir, "generation_config.json"), "r", encoding="utf-8"
+        ) as f:
             generation_config = json.load(f)
 
         tokenizer = Tokenizer(model_dir)
@@ -109,7 +111,9 @@ class MiniQwen(nn.Module):
             top_p=generation_config["top_p"],
         )
 
-        with safe_open(os.path.join(model_dir, "model.safetensors"), framework="pt") as f:
+        with safe_open(
+            os.path.join(model_dir, "model.safetensors"), framework="pt"
+        ) as f:
             sdict = {key: f.get_tensor(key) for key in f.keys()}  # noqa: SIM118
             module.load_state_dict(sdict)
 

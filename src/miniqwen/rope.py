@@ -10,8 +10,7 @@ class RoPE(nn.Module):
         assert max_seq_len > 0
 
         inv_freq = 1.0 / (
-            theta
-            ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim)
+            theta ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim)
         )
         position_ids = torch.arange(max_seq_len, dtype=torch.float32)
         freqs = torch.outer(position_ids, inv_freq)
