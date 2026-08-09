@@ -15,11 +15,13 @@ dependencies = [
     "regex",
     "safetensors",
     "torch",
+    "triton",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-benchmark>=5.2.3",
 ]
 
 [build-system]

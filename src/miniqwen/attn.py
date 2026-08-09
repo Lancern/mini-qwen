@@ -1,3 +1,8 @@
+import math
+
+import torch
+import triton
+import triton.language as tl
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.cuda import nvtx
@@ -89,11 +94,9 @@ class GQA(nn.Module):
         k = k.contiguous()
         v = v.contiguous()
 
-        scaling = self._head_dim**-0.5
+        scale = 1 / math.sqrt(self._head_dim)
         is_causal = q.shape[2] > 1
-        attn_output = nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=None, is_causal=is_causal, scale=scaling
-        )
+        attn_output = _flash_gqa(q, k, v, is_causal=is_causal, scale=scale)
         # attn_output :: (batch_size, num_attention_heads, seq_len, head_dim)
 
         return attn_output.transpose(1, 2).contiguous()
@@ -110,3 +113,112 @@ class GQA(nn.Module):
             batch_size, num_kv_heads, self._num_kv_groups, seq_len, head_dim
         )
         return x.reshape(batch_size, -1, seq_len, head_dim)
+
+
+def _flash_gqa(
+    q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
+    k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
+    v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
+    *,
+    is_causal: bool,
+    scale: float,
+) -> Float[Tensor, "batch num_attn_heads seq_len head_dim"]:
+    B = q.shape[0]
+    Hq = q.shape[1]
+    Sq = q.shape[2]
+    D = q.shape[3]
+    Hkv = k.shape[1]
+    Skv = k.shape[2]
+
+    SQ_TILE_SIZE = 16
+    SK_TILE_SIZE = 16
+
+    Sq_tiles = triton.cdiv(Sq, SQ_TILE_SIZE)
+    out = torch.empty_like(q)
+
+    # fmt: off
+    _flash_gqa_kernel[(B, Hq, Sq_tiles)](
+        q, k, v, out,
+        B, Hq, Sq, Hkv, Skv, D,
+        q.stride(0), q.stride(1), q.stride(2), q.stride(3),
+        k.stride(0), k.stride(1), k.stride(2), k.stride(3),
+        v.stride(0), v.stride(1), v.stride(2), v.stride(3),
+        out.stride(0), out.stride(1), out.stride(2), out.stride(3),
+        scale,
+        SQ_TILE_SIZE,
+        SK_TILE_SIZE,
+        is_causal,
+    )
+    # fmt: on
+
+    return out
+
+
+# fmt: off
+@triton.jit
+def _flash_gqa_kernel(
+    Q_ptr, K_ptr, V_ptr, O_ptr,
+    B, Hq, Sq, Hkv, Skv, D: tl.constexpr,
+    stride_qb, stride_qh, stride_qs, stride_qd,
+    stride_kb, stride_kh, stride_ks, stride_kd,
+    stride_vb, stride_vh, stride_vs, stride_vd,
+    stride_ob, stride_oh, stride_os, stride_od,
+    scale,
+    SQ_TILE_SIZE: tl.constexpr,
+    SKV_TILE_SIZE: tl.constexpr,
+    IS_CAUSAL: tl.constexpr,
+):
+    # fmt: on
+    # launch grid: (B, Hq, Sq_tiles)
+    B_idx = tl.program_id(0)
+    Hq_idx = tl.program_id(1)
+    Sq_tile_idx = tl.program_id(2)
+
+    Hk_idx = Hq_idx // (Hq // Hkv)
+
+    Q_ptr += B_idx * stride_qb + Hq_idx * stride_qh
+    K_ptr += B_idx * stride_kb + Hk_idx * stride_kh
+    V_ptr += B_idx * stride_vb + Hk_idx * stride_vh
+    O_ptr += B_idx * stride_ob + Hq_idx * stride_oh
+
+    offs_Sq = tl.arange(0, SQ_TILE_SIZE) + Sq_tile_idx * SQ_TILE_SIZE
+    offs_D = tl.arange(0, D)
+
+    Q_tile_ptrs = Q_ptr + (offs_Sq[:, None] * stride_qs + offs_D[None, :] * stride_qd)
+    Q_tile_mask = offs_Sq[:, None] < Sq
+    Q_tile = tl.load(Q_tile_ptrs, mask=Q_tile_mask, other=0.0).cast(tl.float32)
+
+    O_tile = tl.zeros((SQ_TILE_SIZE, D), tl.float32)
+    rowmax = tl.full((SQ_TILE_SIZE,), -math.inf, tl.float32)
+    expsum = tl.zeros((SQ_TILE_SIZE,), tl.float32)
+
+    for Skv_tile_idx in range(tl.cdiv(Skv, SKV_TILE_SIZE)):
+        offs_Skv = tl.arange(0, SKV_TILE_SIZE) + Skv_tile_idx * SKV_TILE_SIZE
+        K_tile_ptrs = K_ptr + (offs_Skv[:, None] * stride_ks + offs_D[None, :] * stride_kd)
+        K_tile_mask = offs_Skv[:, None] < Skv
+        K_tile = tl.load(K_tile_ptrs, mask=K_tile_mask, other=0.0).cast(tl.float32)
+
+        QK_tile = tl.dot(Q_tile, K_tile.T) * scale
+
+        if IS_CAUSAL:
+            causal_mask = offs_Sq[:, None] >= offs_Skv[None, :]
+            QK_tile = tl.where(causal_mask, QK_tile, -math.inf)
+
+        V_tile_ptrs = V_ptr + (offs_Skv[:, None] * stride_vs + offs_D[None, :] * stride_vd)
+        V_tile = tl.load(V_tile_ptrs, mask=K_tile_mask, other=0.0).cast(tl.float32)
+
+        rowmax_new = tl.maximum(rowmax, QK_tile.max(axis=-1))
+        adj = tl.exp(rowmax - rowmax_new)
+
+        p = tl.exp(QK_tile - rowmax_new[:, None])
+        O_tile = O_tile * adj[:, None] + tl.dot(p, V_tile)
+
+        rowmax = rowmax_new
+        expsum = expsum * adj + tl.exp(QK_tile - rowmax[:, None]).sum(axis=-1)
+
+    O_tile /= expsum[:, None]
+
+    offs_Sq_out = tl.arange(0, SQ_TILE_SIZE) + Sq_tile_idx * SQ_TILE_SIZE
+    O_tile_ptrs = O_ptr + (offs_Sq_out[:, None] * stride_os + offs_D[None, :] * stride_od)
+    O_tile_mask = offs_Sq_out[:, None] < Sq
+    tl.store(O_tile_ptrs, O_tile, mask=O_tile_mask)
