@@ -23,6 +23,10 @@ def sample_response(model: MiniQwen, prompt: str, max_generate_len: int = 1000):
     print(f"--- {num_tokens_generated} token(s) generated in {elapsed_sec:.2f} seconds")
     print(f"--- {tokens_per_sec:.2f} token(s)/sec")
 
+    if cache := model.model.kv_cache:
+        print(f"--- KV cache size: {cache.size} byte(s)")
+        print(f"--- Cached length: {cache[0].cached_seq_len} token(s)")
+
 
 def main():
     parser = ArgumentParser(description="MiniQwen REPL")

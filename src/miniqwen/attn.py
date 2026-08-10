@@ -82,17 +82,13 @@ class GQA(nn.Module):
         k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
         v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
     ) -> Float[Tensor, "batch seq_len num_attn_heads head_dim"]:
+        if self._cache is not None:
+            k, v = self._cache.update(k, v)
+
         k = self._expand_kv(k)
         v = self._expand_kv(v)
         # k :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
         # v :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
-
-        if self._cache is not None:
-            k, v = self._cache.update_and_concat(k, v)
-
-        q = q.contiguous()
-        k = k.contiguous()
-        v = v.contiguous()
 
         scale = 1 / math.sqrt(self._head_dim)
         is_causal = q.shape[2] > 1

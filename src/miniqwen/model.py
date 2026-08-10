@@ -35,9 +35,9 @@ class Model(nn.Module):
 
         self._use_cache = use_cache
         if use_cache:
-            self._cache = Cache(num_hidden_layers)
+            self.kv_cache = Cache(num_hidden_layers, max_seq_len)
         else:
-            self._cache = None
+            self.kv_cache = None
 
         self._rope = RoPE(rope_theta, head_dim, max_seq_len)
 
@@ -53,7 +53,7 @@ class Model(nn.Module):
                     intermediate_size,
                     rms_norm_eps,
                     rope=self._rope,
-                    cache=self._cache,
+                    cache=self.kv_cache,
                 )
                 for idx in range(num_hidden_layers)
             ]
@@ -68,7 +68,7 @@ class Model(nn.Module):
         # hidden_state :: (batch_size, seq_len, hidden_size)
 
         if self._use_cache:
-            generated_seq_len = self._cache[0].cached_seq_len
+            generated_seq_len = self.kv_cache[0].cached_seq_len
         else:
             generated_seq_len = 0
 
