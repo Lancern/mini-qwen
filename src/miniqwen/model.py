@@ -186,21 +186,17 @@ class MiniQwen(nn.Module):
     def generate_once(
         self, input_ids: Int[Tensor, "batch seq_len"]
     ) -> Int[Tensor, "batch 1"]:
-        logits = self(input_ids)
-        # logits :: (batch_size, seq_len, vocab_size)
-
-        logits = logits[:, -1, :].squeeze(dim=1) / self._temperature
-        # logits :: (batch_size, vocab_size)
-
-        probs = self._apply_top_p(self._apply_top_k(logits)).softmax(dim=-1)
-        # probs :: (batch_size, vocab_size)
-
+        logits: Float[Tensor, "batch vocab_size"] = self(input_ids) / self._temperature
+        probs: Float[Tensor, "batch vocab_size"] = self._apply_top_p(
+            self._apply_top_k(logits)
+        ).softmax(dim=-1)
         return torch.multinomial(probs, num_samples=1)
 
     def forward(
         self, input_ids: Int[Tensor, "batch seq_len"]
-    ) -> Float[Tensor, "batch seq_len vocab_size"]:
-        return self.lm_head(self.model(input_ids))
+    ) -> Float[Tensor, "batch vocab_size"]:
+        hidden: Float[Tensor, "batch seq_len hidden_size"] = self.model(input_ids)
+        return self.lm_head(hidden[:, -1, :])
 
     def _apply_top_k(
         self, logits: Float[Tensor, "batch vocab_size"]
