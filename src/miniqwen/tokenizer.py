@@ -3,6 +3,7 @@ import json
 import os
 from dataclasses import dataclass
 from os import PathLike
+from typing import cast
 
 import regex
 import torch
@@ -37,8 +38,8 @@ class Vocab:
     def special_tokens(self) -> list[TokenInfo]:
         return self._special_tokens
 
-    def get_token_id(self, content: str) -> int | None:
-        return self._content_to_id.get(content)
+    def get_token_id(self, content: str) -> int:
+        return self._content_to_id[content]
 
     def get_token_info(self, token_id: int) -> TokenInfo | None:
         if token_id >= len(self._tokens):
@@ -86,9 +87,7 @@ class Tokenizer:
         return self._eos
 
     @nvtx.range("Tokenizer.tokenize")
-    def tokenize(
-        self, text: str, identify_special=True, return_tensor=True
-    ) -> list[int] | Int[Tensor, "1 seq_len"]:
+    def tokenize(self, text: str, identify_special: bool = True) -> list[int]:
         fragments: list[str | int] = [text]
         if identify_special:
             self._identify_specials(fragments)
@@ -107,13 +106,11 @@ class Tokenizer:
             fragments[i : i + 1] = [self._vocab.get_token_id(t) for t in tokens]
             i += len(tokens)
 
-        if return_tensor:
-            return torch.tensor([fragments])
-        return fragments
+        return cast(list[int], fragments)
 
     def tokenize_for_chat(self, prompt: str) -> Int[Tensor, "1 seq_len"]:
         template = f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-        return self.tokenize(template)
+        return torch.tensor([self.tokenize(template)])
 
     @nvtx.range("Tokenizer.decode")
     def decode(self, token_id: int, skip_special: bool = True) -> str:
@@ -138,7 +135,7 @@ class Tokenizer:
                 i += len(subfrag)
 
     def _identify_special(self, text: str, special_ti: TokenInfo) -> list[str | int]:
-        result = []
+        result: list[str | int] = []
         i = 0
         while i < len(text):
             j = text.find(special_ti.content, i)

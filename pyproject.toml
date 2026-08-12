@@ -28,6 +28,7 @@ dev = [
     "pyrefly>=1.2.0",
     "pytest",
     "pytest-benchmark>=5.2.3",
+    "types-regex>=2026.7.19.20260720",
 ]
 
 [build-system]

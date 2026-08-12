@@ -3,7 +3,7 @@ from torch import Tensor, nn
 from torch.cuda import nvtx
 
 from .attn import GQA
-from .cache import Cache
+from .cache import Cache, LayerCache
 from .norm import RMSNorm
 from .rope import RoPE
 
@@ -46,6 +46,7 @@ class DecoderLayer(nn.Module):
         self._layer_idx = layer_idx
         self._hidden_size = hidden_size
 
+        self._cache: LayerCache | None
         if cache is not None:
             self._cache = cache[layer_idx]
         else:

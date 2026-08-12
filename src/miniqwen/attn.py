@@ -135,15 +135,15 @@ def _flash_gqa(
     # fmt: off
     _flash_gqa_kernel[(B, Hq, Sq_tiles)](
         q, k, v, out,
-        B, Hq, Sq, Hkv, Skv, D,
+        B, Hq, Sq, Hkv, Skv, D,  # type: ignore
         q.stride(0), q.stride(1), q.stride(2), q.stride(3),
         k.stride(0), k.stride(1), k.stride(2), k.stride(3),
         v.stride(0), v.stride(1), v.stride(2), v.stride(3),
         out.stride(0), out.stride(1), out.stride(2), out.stride(3),
         scale,
-        SQ_TILE_SIZE,
-        SK_TILE_SIZE,
-        is_causal,
+        SQ_TILE_SIZE,  # type: ignore
+        SK_TILE_SIZE,  # type: ignore
+        is_causal,  # type: ignore
     )
     # fmt: on
 

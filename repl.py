@@ -1,6 +1,10 @@
+#!/usr/bin/env python
+
 import os
 from argparse import ArgumentParser
+from os import PathLike
 from time import time
+from typing import cast
 
 import torch
 
@@ -35,7 +39,7 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
 
     args = parser.parse_args()
-    model_dir = args.model_dir or os.getcwd()
+    model_dir = cast(PathLike, args.model_dir or os.getcwd())
     device = torch.device(args.device)
 
     m = MiniQwen.from_pretrained(model_dir).to(device)
