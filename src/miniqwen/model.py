@@ -33,7 +33,7 @@ class Model(nn.Module):
     ):
         super().__init__()
 
-        self._use_cache = use_cache
+        self.kv_cache: Cache | None
         if use_cache:
             self.kv_cache = Cache(num_hidden_layers, max_seq_len)
         else:
@@ -67,7 +67,7 @@ class Model(nn.Module):
         hidden_state = self.embed_tokens(input_ids)
         # hidden_state :: (batch_size, seq_len, hidden_size)
 
-        if self._use_cache:
+        if self.kv_cache is not None:
             generated_seq_len = self.kv_cache[0].cached_seq_len
         else:
             generated_seq_len = 0

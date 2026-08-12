@@ -18,8 +18,14 @@ dependencies = [
     "triton",
 ]
 
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+]
+
 [dependency-groups]
 dev = [
+    "pyrefly>=1.2.0",
     "pytest",
     "pytest-benchmark>=5.2.3",
 ]

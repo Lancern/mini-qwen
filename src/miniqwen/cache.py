@@ -57,6 +57,9 @@ class LayerCache:
                 device=v.device,
             )
 
+        assert self._k_buffer is not None
+        assert self._v_buffer is not None
+
         updated_cached_len = self._cached_seq_len + seq_len
         assert updated_cached_len <= self._max_seq_len
 
