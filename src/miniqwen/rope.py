@@ -5,7 +5,13 @@ from torch.cuda import nvtx
 
 
 class RoPE(nn.Module):
-    def __init__(self, theta: float, head_dim: int, max_seq_len: int):
+    def __init__(
+        self,
+        theta: float,
+        head_dim: int,
+        max_seq_len: int,
+        dtype: torch.dtype = torch.float16,
+    ):
         super().__init__()
         assert head_dim % 2 == 0
         assert max_seq_len > 0
@@ -17,8 +23,8 @@ class RoPE(nn.Module):
         freqs = torch.outer(position_ids, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
 
-        self.cos = nn.Buffer(emb.cos(), persistent=False)
-        self.sin = nn.Buffer(emb.sin(), persistent=False)
+        self.cos = nn.Buffer(emb.cos().to(dtype=dtype), persistent=False)
+        self.sin = nn.Buffer(emb.sin().to(dtype=dtype), persistent=False)
 
     @nvtx.range("RoPE.forward")
     def forward(
@@ -30,17 +36,31 @@ class RoPE(nn.Module):
         Float[Tensor, "batch num_attn_heads seq_len head_dim"],
         Float[Tensor, "batch num_kv_heads seq_len head_dim"],
     ]:
-        cos = self.cos[position_ids].unsqueeze(1)
-        sin = self.sin[position_ids].unsqueeze(1)
-        # cos, sin :: (batch_size, 1, seq_len, head_dim)
+        with nvtx.range("selecting cos and sin"):
+            cos = self.cos[position_ids].unsqueeze(1)
+            sin = self.sin[position_ids].unsqueeze(1)
+            # cos, sin :: (batch_size, 1, seq_len, head_dim)
 
-        def rotate_half(
-            x: Float[Tensor, "... head_dim"],
-        ) -> Float[Tensor, "... head_dim"]:
-            x1 = x[..., : x.shape[-1] // 2]
-            x2 = x[..., x.shape[-1] // 2 :]
-            return torch.cat((-x2, x1), dim=-1)
+        with nvtx.range("applying transformation"):
+            q_embed = _apply_rotary(q, cos.to(q.dtype), sin.to(q.dtype))
+            k_embed = _apply_rotary(k, cos.to(k.dtype), sin.to(k.dtype))
 
-        q_embed = (q * cos.to(q.dtype)) + (rotate_half(q) * sin.to(q.dtype))
-        k_embed = (k * cos.to(k.dtype)) + (rotate_half(k) * sin.to(k.dtype))
         return q_embed, k_embed
+
+
+def _apply_rotary(
+    x: Float[Tensor, "... head_dim"],
+    cos: Float[Tensor, "... head_dim"],
+    sin: Float[Tensor, "... head_dim"],
+) -> Float[Tensor, "... head_dim"]:
+    half_head_dim = x.shape[-1] // 2
+    x1 = x[..., :half_head_dim]
+    x2 = x[..., half_head_dim:]
+
+    # Start with the final output allocation and accumulate the cross-half terms
+    # into it. This avoids materializing rotate_half(x) and concatenating its two
+    # halves before the elementwise multiply and add.
+    output = x * cos
+    output[..., :half_head_dim].addcmul_(x2, sin[..., :half_head_dim], value=-1)
+    output[..., half_head_dim:].addcmul_(x1, sin[..., half_head_dim:])
+    return output

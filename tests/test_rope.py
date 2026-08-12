@@ -23,7 +23,7 @@ def test_position_zero_does_not_change_activations():
 def test_matches_reference_with_different_head_counts_and_broadcasting():
     theta = 10_000.0
     head_dim = 8
-    rope = RoPE(theta=theta, head_dim=head_dim, max_seq_len=8)
+    rope = RoPE(theta=theta, head_dim=head_dim, max_seq_len=8, dtype=torch.float32)
     q = torch.randn(2, 4, 3, head_dim, dtype=torch.float64)
     k = torch.randn(2, 2, 3, head_dim, dtype=torch.float64)
     position_ids = torch.tensor([[0, 2, 7]])
@@ -46,7 +46,7 @@ def test_matches_reference_with_different_head_counts_and_broadcasting():
     torch.testing.assert_close(rotated_k, expected_k)
 
 def test_precomputes_cos_and_sin_for_the_maximum_sequence_length():
-    rope = RoPE(theta=10_000.0, head_dim=8, max_seq_len=16)
+    rope = RoPE(theta=10_000.0, head_dim=8, max_seq_len=16, dtype=torch.float32)
 
     assert rope.cos.shape == (16, 8)
     assert rope.sin.shape == (16, 8)
@@ -56,7 +56,7 @@ def test_precomputes_cos_and_sin_for_the_maximum_sequence_length():
     assert not rope.sin.requires_grad
 
 def test_rejects_positions_beyond_the_precomputed_length():
-    rope = RoPE(theta=10_000.0, head_dim=8, max_seq_len=2)
+    rope = RoPE(theta=10_000.0, head_dim=8, max_seq_len=2, dtype=torch.float32)
     q = torch.randn(1, 4, 1, 8)
     k = torch.randn(1, 2, 1, 8)
 
