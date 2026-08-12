@@ -40,6 +40,7 @@ class Model(nn.Module):
             self.kv_cache = None
 
         self._rope = RoPE(rope_theta, head_dim, max_seq_len)
+        self._rope.compile()
 
         self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
         self.layers = nn.ModuleList(

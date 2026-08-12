@@ -36,14 +36,12 @@ class RoPE(nn.Module):
         Float[Tensor, "batch num_attn_heads seq_len head_dim"],
         Float[Tensor, "batch num_kv_heads seq_len head_dim"],
     ]:
-        with nvtx.range("selecting cos and sin"):
-            cos = self.cos[position_ids].unsqueeze(1)
-            sin = self.sin[position_ids].unsqueeze(1)
-            # cos, sin :: (batch_size, 1, seq_len, head_dim)
+        cos = self.cos[position_ids].unsqueeze(1)
+        sin = self.sin[position_ids].unsqueeze(1)
+        # cos, sin :: (batch_size, 1, seq_len, head_dim)
 
-        with nvtx.range("applying transformation"):
-            q_embed = _apply_rotary(q, cos.to(q.dtype), sin.to(q.dtype))
-            k_embed = _apply_rotary(k, cos.to(k.dtype), sin.to(k.dtype))
+        q_embed = _apply_rotary(q, cos.to(q.dtype), sin.to(q.dtype))
+        k_embed = _apply_rotary(k, cos.to(k.dtype), sin.to(k.dtype))
 
         return q_embed, k_embed
 
