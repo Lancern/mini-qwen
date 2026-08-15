@@ -22,6 +22,7 @@ class GQA(nn.Module):
         layernorm_eps: float,
         rope: RoPE,
         cache: LayerCache,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
@@ -33,17 +34,27 @@ class GQA(nn.Module):
 
         self._cache = cache
 
-        self.q_proj = nn.Linear(hidden_size, num_attention_heads * head_dim, bias=False)
-        self.k_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, num_kv_heads * head_dim, bias=False)
-        self.o_proj = nn.Linear(num_attention_heads * head_dim, hidden_size, bias=False)
+        self.q_proj = nn.Linear(
+            hidden_size, num_attention_heads * head_dim, bias=False, dtype=dtype
+        )
+        self.k_proj = nn.Linear(
+            hidden_size, num_kv_heads * head_dim, bias=False, dtype=dtype
+        )
+        self.v_proj = nn.Linear(
+            hidden_size, num_kv_heads * head_dim, bias=False, dtype=dtype
+        )
+        self.o_proj = nn.Linear(
+            num_attention_heads * head_dim, hidden_size, bias=False, dtype=dtype
+        )
         self.q_norm = RMSNorm(
             head_dim,
             layernorm_eps,
+            dtype=dtype,
         )
         self.k_norm = RMSNorm(
             head_dim,
             layernorm_eps,
+            dtype=dtype,
         )
 
     @nvtx.range("GQA.forward")
@@ -184,7 +195,7 @@ def _flash_gqa_kernel(
     Q_tile = tl.load(Q_tile_ptrs, mask=Q_tile_mask, other=0.0).cast(tl.float32)
 
     O_tile = tl.zeros((SQ_TILE_SIZE, D), tl.float32)
-    rowmax = tl.full((SQ_TILE_SIZE,), -math.inf, tl.float32)
+    rowmax = tl.full((SQ_TILE_SIZE,), -float("inf"), tl.float32)
     expsum = tl.zeros((SQ_TILE_SIZE,), tl.float32)
 
     for Skv_tile_idx in range(tl.cdiv(Skv, SKV_TILE_SIZE)):
@@ -197,7 +208,7 @@ def _flash_gqa_kernel(
 
         if IS_CAUSAL:
             causal_mask = offs_Sq[:, None] >= offs_Skv[None, :]
-            QK_tile = tl.where(causal_mask, QK_tile, -math.inf)
+            QK_tile = tl.where(causal_mask, QK_tile, -float("inf"))
 
         V_tile_ptrs = V_ptr + (offs_Skv[:, None] * stride_vs + offs_D[None, :] * stride_vd)
         V_tile = tl.load(V_tile_ptrs, mask=K_tile_mask, other=0.0).cast(tl.float32)

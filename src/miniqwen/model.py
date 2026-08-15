@@ -29,15 +29,16 @@ class Model(nn.Module):
         num_key_value_heads: int,
         intermediate_size: int,
         rms_norm_eps: float,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
         self.kv_cache = Cache(num_hidden_layers, max_seq_len)
 
-        self._rope = RoPE(rope_theta, head_dim, max_seq_len)
+        self._rope = RoPE(rope_theta, head_dim, max_seq_len, dtype=dtype)
         self._rope.compile()
 
-        self.embed_tokens = nn.Embedding(vocab_size, hidden_size)
+        self.embed_tokens = nn.Embedding(vocab_size, hidden_size, dtype=dtype)
         self.layers = nn.ModuleList(
             [
                 DecoderLayer(
@@ -50,11 +51,12 @@ class Model(nn.Module):
                     rms_norm_eps,
                     rope=self._rope,
                     cache=self.kv_cache,
+                    dtype=dtype,
                 )
                 for idx in range(num_hidden_layers)
             ]
         )
-        self.norm = RMSNorm(hidden_size, rms_norm_eps)
+        self.norm = RMSNorm(hidden_size, rms_norm_eps, dtype=dtype)
 
     @nvtx.range("Model.forward")
     def forward(
@@ -88,6 +90,10 @@ class MiniQwen(nn.Module):
         ) as f:
             generation_config = json.load(f)
 
+        dtype = {
+            "bfloat16": torch.bfloat16,
+        }[config["torch_dtype"]]
+
         tokenizer = Tokenizer(model_dir)
         module = MiniQwen(
             tokenizer=tokenizer,
@@ -104,6 +110,7 @@ class MiniQwen(nn.Module):
             temperature=generation_config["temperature"],
             top_k=generation_config["top_k"],
             top_p=generation_config["top_p"],
+            dtype=dtype,
         )
 
         with safe_open(
@@ -130,6 +137,7 @@ class MiniQwen(nn.Module):
         temperature: float,
         top_k: int,
         top_p: float,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
@@ -149,8 +157,9 @@ class MiniQwen(nn.Module):
             num_key_value_heads,
             intermediate_size,
             rms_norm_eps,
+            dtype,
         )
-        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
+        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False, dtype=dtype)
 
     @torch.inference_mode()
     def generate(self, prompt: str, max_generate_len: int = 1000) -> Generator[str]:

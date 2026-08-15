@@ -1,3 +1,4 @@
+import torch
 from jaxtyping import Float, Int
 from torch import Tensor, nn
 from torch.cuda import nvtx
@@ -13,12 +14,13 @@ class MLP(nn.Module):
         self,
         hidden_size: int,
         intermediate_size: int,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
+        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
+        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False, dtype=dtype)
         self.act_fn = nn.SiLU()
 
     @nvtx.range("MLP.forward")
@@ -40,6 +42,7 @@ class DecoderLayer(nn.Module):
         layernorm_eps: float,
         rope: RoPE,
         cache: Cache,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
@@ -56,15 +59,18 @@ class DecoderLayer(nn.Module):
             layernorm_eps,
             rope=rope,
             cache=self._cache,
+            dtype=dtype,
         )
-        self.mlp = MLP(hidden_size, intermediate_size)
+        self.mlp = MLP(hidden_size, intermediate_size, dtype=dtype)
         self.input_layernorm = RMSNorm(
             hidden_size,
             layernorm_eps,
+            dtype=dtype,
         )
         self.post_attention_layernorm = RMSNorm(
             hidden_size,
             layernorm_eps,
+            dtype=dtype,
         )
 
     @nvtx.range("DecoderLayer.forward")

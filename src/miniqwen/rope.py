@@ -10,7 +10,7 @@ class RoPE(nn.Module):
         theta: float,
         head_dim: int,
         max_seq_len: int,
-        dtype: torch.dtype = torch.float16,
+        dtype: torch.dtype,
     ):
         super().__init__()
         assert head_dim % 2 == 0
