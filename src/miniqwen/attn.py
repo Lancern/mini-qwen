@@ -95,30 +95,12 @@ class GQA(nn.Module):
     ) -> Float[Tensor, "batch seq_len num_attn_heads head_dim"]:
         k, v = self._cache.update(k, v)
 
-        k = self._expand_kv(k)
-        v = self._expand_kv(v)
-        # k :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
-        # v :: (batch_size, num_attention_heads, kv_seq_len, head_dim)
-
         scale = 1 / math.sqrt(self._head_dim)
         is_causal = q.shape[2] > 1
         attn_output = _flash_gqa(q, k, v, is_causal=is_causal, scale=scale)
         # attn_output :: (batch_size, num_attention_heads, seq_len, head_dim)
 
         return attn_output.transpose(1, 2).contiguous()
-
-    def _expand_kv(
-        self, x: Float[Tensor, "batch num_kv_heads seq_len head_dim"]
-    ) -> Float[Tensor, "batch num_attn_heads seq_len head_dim"]:
-        batch_size, num_kv_heads, seq_len, head_dim = x.shape
-
-        if self._num_kv_groups <= 1:
-            return x
-
-        x = x[:, :, None, :, :].expand(
-            batch_size, num_kv_heads, self._num_kv_groups, seq_len, head_dim
-        )
-        return x.reshape(batch_size, -1, seq_len, head_dim)
 
 
 def _flash_gqa(
