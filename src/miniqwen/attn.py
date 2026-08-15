@@ -162,6 +162,8 @@ def _flash_gqa_kernel(
     Hq_idx = tl.program_id(1)
     Sq_tile_idx = tl.program_id(2)
 
+    scale = tl.to_tensor(scale).to(tl.float32)
+
     Hk_idx = Hq_idx // (Hq // Hkv)
 
     Q_ptr += B_idx * stride_qb + Hq_idx * stride_qh
