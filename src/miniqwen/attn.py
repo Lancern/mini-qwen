@@ -21,7 +21,7 @@ class GQA(nn.Module):
         num_kv_heads: int,
         layernorm_eps: float,
         rope: RoPE,
-        cache: LayerCache | None = None,
+        cache: LayerCache,
     ):
         super().__init__()
 
@@ -82,8 +82,7 @@ class GQA(nn.Module):
         k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
         v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
     ) -> Float[Tensor, "batch seq_len num_attn_heads head_dim"]:
-        if self._cache is not None:
-            k, v = self._cache.update(k, v)
+        k, v = self._cache.update(k, v)
 
         k = self._expand_kv(k)
         v = self._expand_kv(v)

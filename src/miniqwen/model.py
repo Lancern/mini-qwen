@@ -29,15 +29,10 @@ class Model(nn.Module):
         num_key_value_heads: int,
         intermediate_size: int,
         rms_norm_eps: float,
-        use_cache: bool = True,
     ):
         super().__init__()
 
-        self.kv_cache: Cache | None
-        if use_cache:
-            self.kv_cache = Cache(num_hidden_layers, max_seq_len)
-        else:
-            self.kv_cache = None
+        self.kv_cache = Cache(num_hidden_layers, max_seq_len)
 
         self._rope = RoPE(rope_theta, head_dim, max_seq_len)
         self._rope.compile()
@@ -68,10 +63,7 @@ class Model(nn.Module):
         hidden_state = self.embed_tokens(input_ids)
         # hidden_state :: (batch_size, seq_len, hidden_size)
 
-        if self.kv_cache is not None:
-            generated_seq_len = self.kv_cache[0].cached_seq_len
-        else:
-            generated_seq_len = 0
+        generated_seq_len = self.kv_cache[0].cached_seq_len
 
         seq_len = input_ids.shape[1]
         position_ids = torch.arange(
@@ -138,7 +130,6 @@ class MiniQwen(nn.Module):
         temperature: float,
         top_k: int,
         top_p: float,
-        use_cache: bool = True,
     ):
         super().__init__()
 
@@ -146,7 +137,6 @@ class MiniQwen(nn.Module):
         self._temperature = temperature
         self._top_k = top_k
         self._top_p = top_p
-        self._use_cache = use_cache
 
         self.model = Model(
             vocab_size,
@@ -159,7 +149,6 @@ class MiniQwen(nn.Module):
             num_key_value_heads,
             intermediate_size,
             rms_norm_eps,
-            use_cache,
         )
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
 
@@ -178,12 +167,7 @@ class MiniQwen(nn.Module):
             output_token = self._tokenizer.decode(output_id)
             yield output_token
 
-            if self._use_cache:
-                input_ids = torch.tensor([[output_id]], device=device)
-            else:
-                input_ids = torch.cat(
-                    (input_ids, torch.tensor([[output_id]], device=device)), dim=1
-                )
+            input_ids = torch.tensor([[output_id]], device=device)
 
     @torch.inference_mode()
     def generate_once(
