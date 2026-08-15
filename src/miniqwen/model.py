@@ -62,8 +62,9 @@ class Model(nn.Module):
     def forward(
         self, input_ids: Int[Tensor, "batch seq_len"]
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
-        hidden_state = self.embed_tokens(input_ids)
-        # hidden_state :: (batch_size, seq_len, hidden_size)
+        with nvtx.range("input embedding"):
+            hidden_state = self.embed_tokens(input_ids)
+            # hidden_state :: (batch_size, seq_len, hidden_size)
 
         generated_seq_len = self.kv_cache[0].cached_seq_len
 
@@ -74,10 +75,12 @@ class Model(nn.Module):
         # position_ids :: (1, seq_len)
 
         for decoder_layer in self.layers:
-            hidden_state = decoder_layer(hidden_state, position_ids)
-            # hidden_state :: (batch_size, seq_len, hidden_size)
+            with nvtx.range("decoder layer"):
+                hidden_state = decoder_layer(hidden_state, position_ids)
+                # hidden_state :: (batch_size, seq_len, hidden_size)
 
-        return self.norm(hidden_state)
+        with nvtx.range("RMSNorm"):
+            return self.norm(hidden_state)
 
 
 class MiniQwen(nn.Module):
@@ -188,11 +191,14 @@ class MiniQwen(nn.Module):
         ).softmax(dim=-1)
         return torch.multinomial(probs, num_samples=1)
 
+    @nvtx.range("MiniQwen.forward")
     def forward(
         self, input_ids: Int[Tensor, "batch seq_len"]
     ) -> Float[Tensor, "batch vocab_size"]:
-        hidden: Float[Tensor, "batch seq_len hidden_size"] = self.model(input_ids)
-        return self.lm_head(hidden[:, -1, :])
+        with nvtx.range("model forward"):
+            hidden: Float[Tensor, "batch seq_len hidden_size"] = self.model(input_ids)
+        with nvtx.range("LM head"):
+            return self.lm_head(hidden[:, -1, :])
 
     def _apply_top_k(
         self, logits: Float[Tensor, "batch vocab_size"]

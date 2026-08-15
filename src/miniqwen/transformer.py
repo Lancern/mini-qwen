@@ -80,16 +80,19 @@ class DecoderLayer(nn.Module):
     ) -> Float[Tensor, "batch seq_len hidden_size"]:
         residual = x
 
-        x = self.input_layernorm(x)
-        # x :: (batch_size, seq_len, hidden_size)
+        with nvtx.range("input RMSNorm"):
+            x = self.input_layernorm(x)
+            # x :: (batch_size, seq_len, hidden_size)
 
-        x = self.self_attn(x, position_ids)
-        x = x + residual
-        # x :: (batch_size, seq_len, hidden_size)
+        with nvtx.range("self attention"):
+            x = self.self_attn(x, position_ids)
+            x = x + residual
+            # x :: (batch_size, seq_len, hidden_size)
 
-        residual = x
-        x = self.mlp(self.post_attention_layernorm(x))
-        x = x + residual
-        # x :: (batch_size, seq_len, hidden_size)
+        with nvtx.range("MLP"):
+            residual = x
+            x = self.mlp(self.post_attention_layernorm(x))
+            x = x + residual
+            # x :: (batch_size, seq_len, hidden_size)
 
         return x
