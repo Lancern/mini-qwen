@@ -13,7 +13,7 @@ from torch.cuda import nvtx
 from .cache import Cache
 from .rope import RoPE
 from .tokenizer import Tokenizer
-from .transformer import DecoderLayer, RMSNorm
+from .transformer import DecoderLayer
 
 
 class Model(nn.Module):
@@ -56,7 +56,7 @@ class Model(nn.Module):
                 for idx in range(num_hidden_layers)
             ]
         )
-        self.norm = RMSNorm(hidden_size, rms_norm_eps, dtype=dtype)
+        self.norm = nn.RMSNorm(hidden_size, rms_norm_eps, dtype=dtype)
 
     @nvtx.range("Model.forward")
     def forward(

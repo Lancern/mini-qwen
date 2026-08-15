@@ -8,7 +8,6 @@ from torch import Tensor, nn
 from torch.cuda import nvtx
 
 from .cache import LayerCache
-from .norm import RMSNorm
 from .rope import RoPE
 
 
@@ -46,12 +45,12 @@ class GQA(nn.Module):
         self.o_proj = nn.Linear(
             num_attention_heads * head_dim, hidden_size, bias=False, dtype=dtype
         )
-        self.q_norm = RMSNorm(
+        self.q_norm = nn.RMSNorm(
             head_dim,
             layernorm_eps,
             dtype=dtype,
         )
-        self.k_norm = RMSNorm(
+        self.k_norm = nn.RMSNorm(
             head_dim,
             layernorm_eps,
             dtype=dtype,

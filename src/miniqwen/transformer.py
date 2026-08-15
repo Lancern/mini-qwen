@@ -5,7 +5,6 @@ from torch.cuda import nvtx
 
 from .attn import GQA
 from .cache import Cache
-from .norm import RMSNorm
 from .rope import RoPE
 
 
@@ -62,12 +61,12 @@ class DecoderLayer(nn.Module):
             dtype=dtype,
         )
         self.mlp = MLP(hidden_size, intermediate_size, dtype=dtype)
-        self.input_layernorm = RMSNorm(
+        self.input_layernorm = nn.RMSNorm(
             hidden_size,
             layernorm_eps,
             dtype=dtype,
         )
-        self.post_attention_layernorm = RMSNorm(
+        self.post_attention_layernorm = nn.RMSNorm(
             hidden_size,
             layernorm_eps,
             dtype=dtype,
