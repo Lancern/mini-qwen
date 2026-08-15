@@ -163,6 +163,7 @@ class MiniQwen(nn.Module):
         )
         self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False)
 
+    @torch.inference_mode()
     def generate(self, prompt: str, max_generate_len: int = 1000) -> Generator[str]:
         device = self.lm_head.weight.device
 
@@ -184,6 +185,7 @@ class MiniQwen(nn.Module):
                     (input_ids, torch.tensor([[output_id]], device=device)), dim=1
                 )
 
+    @torch.inference_mode()
     def generate_once(
         self, input_ids: Int[Tensor, "batch seq_len"]
     ) -> Int[Tensor, "batch 1"]:
