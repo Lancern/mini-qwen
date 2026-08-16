@@ -33,8 +33,9 @@ def sample_response(model: MiniQwen, prompt: str, max_generate_len: int = 1000):
     if first_token_time is not None:
         ttft = first_token_time - start_time
         tpot = (end_time - first_token_time) / (num_tokens_generated - 1)
-        print(f"--- TTFT: {ttft} sec")
-        print(f"--- TPOT: {tpot * 1000} ms")
+        decode_tokens_per_sec = 1 / tpot
+        print(f"--- TTFT: {ttft:.3f} sec")
+        print(f"--- TPOT: {tpot * 1000:.3f} ms ({decode_tokens_per_sec:.2f} token(s)/sec)")
 
     if cache := model.model.kv_cache:
         print(f"--- KV cache size: {cache.size} byte(s)")
