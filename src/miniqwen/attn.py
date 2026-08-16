@@ -59,65 +59,65 @@ class GQA(nn.Module):
     @nvtx.range("GQA.forward")
     def forward(
         self,
-        x: Float[Tensor, "batch seq_len hidden_size"],
-        position_ids: Int[Tensor, "batch seq_len"],
-    ) -> Float[Tensor, "batch seq_len hidden_size"]:
+        x: Float[Tensor, "1 seq_len hidden_size"],
+        position_ids: Int[Tensor, "1 seq_len"],
+    ) -> Float[Tensor, "1 seq_len hidden_size"]:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self._head_dim)
-        # hidden_shape = (batch_size, seq_len, -1, self._head_dim)
+        # hidden_shape = (1, seq_len, -1, self._head_dim)
 
         with nvtx.range("q transform"):
             q_states = self.q_norm(self.q_proj(x).view(hidden_shape)).transpose(1, 2)
-            # q_states :: (batch_size, num_attention_heads, seq_len, head_dim)
+            # q_states :: (1, num_attention_heads, seq_len, head_dim)
         with nvtx.range("k transform"):
             k_states = self.k_norm(self.k_proj(x).view(hidden_shape)).transpose(1, 2)
-            # k_states :: (batch_size, num_kv_heads, seq_len, head_dim)
+            # k_states :: (1, num_kv_heads, seq_len, head_dim)
         with nvtx.range("v transform"):
             v_states = self.v_proj(x).view(hidden_shape).transpose(1, 2)
-            # v_states :: (batch_size, num_kv_heads, seq_len, head_dim)
+            # v_states :: (1, num_kv_heads, seq_len, head_dim)
 
         with nvtx.range("rope"):
             q_states, k_states = self._rope(q_states, k_states, position_ids)
 
         with nvtx.range("attention"):
             attn_output = self._attend(q_states, k_states, v_states)
-            # attn_output :: (batch_size, seq_len, num_attention_heads, head_dim)
+            # attn_output :: (1, seq_len, num_attention_heads, head_dim)
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        # attn_output :: (batch_size, seq_len, num_attention_heads * head_dim)
+        # attn_output :: (1, seq_len, num_attention_heads * head_dim)
 
         with nvtx.range("o transform"):
             attn_output = self.o_proj(attn_output)
-            # attn_output :: (batch_size, seq_len, hidden_size)
+            # attn_output :: (1, seq_len, hidden_size)
 
         return attn_output
 
     @nvtx.range("SelfAttention._attend")
     def _attend(
         self,
-        q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-        k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
-        v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
-    ) -> Float[Tensor, "batch seq_len num_attn_heads head_dim"]:
+        q: Float[Tensor, "1 num_attn_heads seq_len head_dim"],
+        k: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
+        v: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
+    ) -> Float[Tensor, "1 seq_len num_attn_heads head_dim"]:
         k, v = self._cache.update(k, v)
 
         scale = 1 / math.sqrt(self._head_dim)
         is_causal = q.shape[2] > 1
         attn_output = _flash_gqa(q, k, v, is_causal=is_causal, scale=scale)
-        # attn_output :: (batch_size, num_attention_heads, seq_len, head_dim)
+        # attn_output :: (1, num_attention_heads, seq_len, head_dim)
 
         return attn_output.transpose(1, 2).contiguous()
 
 
 @nvtx.range("Flash GQA")
 def _flash_gqa(
-    q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-    k: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
-    v: Float[Tensor, "batch num_kv_heads kv_seq_len head_dim"],
+    q: Float[Tensor, "1 num_attn_heads seq_len head_dim"],
+    k: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
+    v: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
     *,
     is_causal: bool,
     scale: float,
-) -> Float[Tensor, "batch num_attn_heads seq_len head_dim"]:
+) -> Float[Tensor, "1 num_attn_heads seq_len head_dim"]:
     B = q.shape[0]
     Hq = q.shape[1]
     Sq = q.shape[2]

@@ -24,8 +24,8 @@ class MLP(nn.Module):
 
     @nvtx.range("MLP.forward")
     def forward(
-        self, x: Float[Tensor, "batch seq_len hidden_size"]
-    ) -> Float[Tensor, "batch seq_len hidden_size"]:
+        self, x: Float[Tensor, "1 seq_len hidden_size"]
+    ) -> Float[Tensor, "1 seq_len hidden_size"]:
         return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 
 
@@ -75,24 +75,24 @@ class DecoderLayer(nn.Module):
     @nvtx.range("DecoderLayer.forward")
     def forward(
         self,
-        x: Float[Tensor, "batch seq_len hidden_size"],
-        position_ids: Int[Tensor, "batch seq_len"],
-    ) -> Float[Tensor, "batch seq_len hidden_size"]:
+        x: Float[Tensor, "1 seq_len hidden_size"],
+        position_ids: Int[Tensor, "1 seq_len"],
+    ) -> Float[Tensor, "1 seq_len hidden_size"]:
         residual = x
 
         with nvtx.range("input RMSNorm"):
             x = self.input_layernorm(x)
-            # x :: (batch_size, seq_len, hidden_size)
+            # x :: (1, seq_len, hidden_size)
 
         with nvtx.range("self attention"):
             x = self.self_attn(x, position_ids)
             x = x + residual
-            # x :: (batch_size, seq_len, hidden_size)
+            # x :: (1, seq_len, hidden_size)
 
         with nvtx.range("MLP"):
             residual = x
             x = self.mlp(self.post_attention_layernorm(x))
             x = x + residual
-            # x :: (batch_size, seq_len, hidden_size)
+            # x :: (1, seq_len, hidden_size)
 
         return x

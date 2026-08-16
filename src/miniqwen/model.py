@@ -60,11 +60,11 @@ class Model(nn.Module):
 
     @nvtx.range("Model.forward")
     def forward(
-        self, input_ids: Int[Tensor, "batch seq_len"]
-    ) -> Float[Tensor, "batch seq_len hidden_size"]:
+        self, input_ids: Int[Tensor, "1 seq_len"]
+    ) -> Float[Tensor, "1 seq_len hidden_size"]:
         with nvtx.range("input embedding"):
             hidden_state = self.embed_tokens(input_ids)
-            # hidden_state :: (batch_size, seq_len, hidden_size)
+            # hidden_state :: (1, seq_len, hidden_size)
 
         generated_seq_len = self.kv_cache[0].cached_seq_len
 
@@ -77,7 +77,7 @@ class Model(nn.Module):
         for decoder_layer in self.layers:
             with nvtx.range("decoder layer"):
                 hidden_state = decoder_layer(hidden_state, position_ids)
-                # hidden_state :: (batch_size, seq_len, hidden_size)
+                # hidden_state :: (1, seq_len, hidden_size)
 
         with nvtx.range("RMSNorm"):
             return self.norm(hidden_state)
@@ -183,47 +183,47 @@ class MiniQwen(nn.Module):
 
     @torch.inference_mode()
     def generate_once(
-        self, input_ids: Int[Tensor, "batch seq_len"]
-    ) -> Int[Tensor, "batch 1"]:
-        logits: Float[Tensor, "batch vocab_size"] = self(input_ids) / self._temperature
-        probs: Float[Tensor, "batch vocab_size"] = self._apply_top_p(
+        self, input_ids: Int[Tensor, "1 seq_len"]
+    ) -> Int[Tensor, "1 1"]:
+        logits: Float[Tensor, "1 vocab_size"] = self(input_ids) / self._temperature
+        probs: Float[Tensor, "1 vocab_size"] = self._apply_top_p(
             self._apply_top_k(logits)
         ).softmax(dim=-1)
         return torch.multinomial(probs, num_samples=1)
 
     @nvtx.range("MiniQwen.forward")
     def forward(
-        self, input_ids: Int[Tensor, "batch seq_len"]
-    ) -> Float[Tensor, "batch vocab_size"]:
+        self, input_ids: Int[Tensor, "1 seq_len"]
+    ) -> Float[Tensor, "1 vocab_size"]:
         with nvtx.range("model forward"):
-            hidden: Float[Tensor, "batch seq_len hidden_size"] = self.model(input_ids)
+            hidden: Float[Tensor, "1 seq_len hidden_size"] = self.model(input_ids)
         with nvtx.range("LM head"):
             return self.lm_head(hidden[:, -1, :])
 
     def _apply_top_k(
-        self, logits: Float[Tensor, "batch vocab_size"]
-    ) -> Float[Tensor, "batch vocab_size"]:
+        self, logits: Float[Tensor, "1 vocab_size"]
+    ) -> Float[Tensor, "1 vocab_size"]:
         min_top_k_prob = torch.topk(logits, self._top_k)[0][..., -1, None]
-        # min_top_k_prob :: (batch_size, 1)
+        # min_top_k_prob :: (1, 1)
         mask = logits < min_top_k_prob
-        # mask :: (batch_size, vocab_size)
+        # mask :: (1, vocab_size)
 
         return logits.masked_fill(mask, -math.inf)
 
     def _apply_top_p(
-        self, logits: Float[Tensor, "batch vocab_size"]
-    ) -> Float[Tensor, "batch vocab_size"]:
+        self, logits: Float[Tensor, "1 vocab_size"]
+    ) -> Float[Tensor, "1 vocab_size"]:
         sorted_logits, sorted_indecies = torch.sort(logits, descending=False)
-        # sorted_logits :: (batch_size, vocab_size)
-        # sorted_indecies :: (batch_size, vocab_size)
+        # sorted_logits :: (1, vocab_size)
+        # sorted_indecies :: (1, vocab_size)
 
         cum_prob = sorted_logits.softmax(dim=-1).cumsum(dim=-1)
-        # cum_prob :: (batch_size, vocab_size)
+        # cum_prob :: (1, vocab_size)
 
         reset_mask_sorted = cum_prob <= (1 - self._top_p)
         # Make sure the logit giving the highest probability is always kept
         reset_mask_sorted[..., -1:] = 0
-        # reset_mask :: (batch_size, vocab_size)
+        # reset_mask :: (1, vocab_size)
 
         reset_mask = reset_mask_sorted.scatter(1, sorted_indecies, reset_mask_sorted)
         return logits.masked_fill(reset_mask, -math.inf)

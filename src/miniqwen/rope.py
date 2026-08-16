@@ -29,16 +29,16 @@ class RoPE(nn.Module):
     @nvtx.range("RoPE.forward")
     def forward(
         self,
-        q: Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-        k: Float[Tensor, "batch num_kv_heads seq_len head_dim"],
-        position_ids: Int[Tensor, "batch seq_len"],
+        q: Float[Tensor, "1 num_attn_heads seq_len head_dim"],
+        k: Float[Tensor, "1 num_kv_heads seq_len head_dim"],
+        position_ids: Int[Tensor, "1 seq_len"],
     ) -> tuple[
-        Float[Tensor, "batch num_attn_heads seq_len head_dim"],
-        Float[Tensor, "batch num_kv_heads seq_len head_dim"],
+        Float[Tensor, "1 num_attn_heads seq_len head_dim"],
+        Float[Tensor, "1 num_kv_heads seq_len head_dim"],
     ]:
         cos = self.cos[position_ids].unsqueeze(1)
         sin = self.sin[position_ids].unsqueeze(1)
-        # cos, sin :: (batch_size, 1, seq_len, head_dim)
+        # cos, sin :: (1, 1, seq_len, head_dim)
 
         q_embed = _apply_rotary(q, cos.to(q.dtype), sin.to(q.dtype))
         k_embed = _apply_rotary(k, cos.to(k.dtype), sin.to(k.dtype))

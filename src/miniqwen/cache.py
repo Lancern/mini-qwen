@@ -9,10 +9,10 @@ class LayerCache:
         self._cached_seq_len = 0
 
         self._k_buffer: (
-            Float[Tensor, "batch num_attn_heads kv_seq_len head_dim"] | None
+            Float[Tensor, "1 num_attn_heads kv_seq_len head_dim"] | None
         ) = None
         self._v_buffer: (
-            Float[Tensor, "batch num_attn_heads kv_seq_len head_dim"] | None
+            Float[Tensor, "1 num_attn_heads kv_seq_len head_dim"] | None
         ) = None
 
     @property
@@ -30,13 +30,15 @@ class LayerCache:
 
     def update(
         self,
-        k: Float[Tensor, "batch num_kv_heads seq_len head_dim"],
-        v: Float[Tensor, "batch num_kv_heads seq_len head_dim"],
+        k: Float[Tensor, "1 num_kv_heads seq_len head_dim"],
+        v: Float[Tensor, "1 num_kv_heads seq_len head_dim"],
     ) -> tuple[
-        Float[Tensor, "batch num_kv_heads kv_seq_len+seq_len head_dim"],
-        Float[Tensor, "batch num_kv_heads kv_seq_len+seq_len head_dim"],
+        Float[Tensor, "1 num_kv_heads kv_seq_len+seq_len head_dim"],
+        Float[Tensor, "1 num_kv_heads kv_seq_len+seq_len head_dim"],
     ]:
         batch, num_kv_heads, seq_len, head_dim = k.shape
+        assert batch == 1
+
         if self._k_buffer is None:
             assert seq_len <= self._max_seq_len
 
