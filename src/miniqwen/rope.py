@@ -11,6 +11,7 @@ class RoPE(nn.Module):
         head_dim: int,
         max_seq_len: int,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
         assert head_dim % 2 == 0
@@ -23,8 +24,8 @@ class RoPE(nn.Module):
         freqs = torch.outer(position_ids, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
 
-        self.cos = nn.Buffer(emb.cos().to(dtype=dtype), persistent=False)
-        self.sin = nn.Buffer(emb.sin().to(dtype=dtype), persistent=False)
+        self.cos = nn.Buffer(emb.cos().to(dtype=dtype, device=device), persistent=False)
+        self.sin = nn.Buffer(emb.sin().to(dtype=dtype, device=device), persistent=False)
 
     @nvtx.range("RoPE.forward")
     def forward(

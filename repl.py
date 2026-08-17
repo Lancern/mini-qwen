@@ -52,7 +52,7 @@ def main():
     model_dir = cast(PathLike, args.model_dir or os.getcwd())
     device = torch.device(args.device)
 
-    m = MiniQwen.from_pretrained(model_dir).to(device)
+    m = MiniQwen.from_pretrained(model_dir, device=device)
     if args.prompt is not None:
         sample_response(m, args.prompt)
         return

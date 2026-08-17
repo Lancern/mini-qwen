@@ -14,12 +14,19 @@ class MLP(nn.Module):
         hidden_size: int,
         intermediate_size: int,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
 
-        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
-        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False, dtype=dtype)
-        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False, dtype=dtype)
+        self.gate_proj = nn.Linear(
+            hidden_size, intermediate_size, bias=False, dtype=dtype, device=device
+        )
+        self.up_proj = nn.Linear(
+            hidden_size, intermediate_size, bias=False, dtype=dtype, device=device
+        )
+        self.down_proj = nn.Linear(
+            intermediate_size, hidden_size, bias=False, dtype=dtype, device=device
+        )
         self.act_fn = nn.SiLU()
 
     @nvtx.range("MLP.forward")
@@ -42,6 +49,7 @@ class DecoderLayer(nn.Module):
         rope: RoPE,
         cache: Cache,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
 
@@ -59,17 +67,20 @@ class DecoderLayer(nn.Module):
             rope=rope,
             cache=self._cache,
             dtype=dtype,
+            device=device,
         )
-        self.mlp = MLP(hidden_size, intermediate_size, dtype=dtype)
+        self.mlp = MLP(hidden_size, intermediate_size, dtype=dtype, device=device)
         self.input_layernorm = nn.RMSNorm(
             hidden_size,
             layernorm_eps,
             dtype=dtype,
+            device=device,
         )
         self.post_attention_layernorm = nn.RMSNorm(
             hidden_size,
             layernorm_eps,
             dtype=dtype,
+            device=device,
         )
 
     @nvtx.range("DecoderLayer.forward")

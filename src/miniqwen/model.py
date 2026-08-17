@@ -30,15 +30,25 @@ class Model(nn.Module):
         intermediate_size: int,
         rms_norm_eps: float,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
 
-        self.kv_cache = Cache(num_hidden_layers, max_seq_len)
+        self.kv_cache = Cache(
+            num_hidden_layers,
+            num_key_value_heads,
+            max_seq_len,
+            head_dim,
+            dtype=dtype,
+            device=device,
+        )
 
-        self._rope = RoPE(rope_theta, head_dim, max_seq_len, dtype=dtype)
+        self._rope = RoPE(rope_theta, head_dim, max_seq_len, dtype=dtype, device=device)
         self._rope.compile()
 
-        self.embed_tokens = nn.Embedding(vocab_size, hidden_size, dtype=dtype)
+        self.embed_tokens = nn.Embedding(
+            vocab_size, hidden_size, dtype=dtype, device=device
+        )
         self.layers = nn.ModuleList(
             [
                 DecoderLayer(
@@ -52,11 +62,12 @@ class Model(nn.Module):
                     rope=self._rope,
                     cache=self.kv_cache,
                     dtype=dtype,
+                    device=device,
                 )
                 for idx in range(num_hidden_layers)
             ]
         )
-        self.norm = nn.RMSNorm(hidden_size, rms_norm_eps, dtype=dtype)
+        self.norm = nn.RMSNorm(hidden_size, rms_norm_eps, dtype=dtype, device=device)
 
     @nvtx.range("Model.forward")
     def forward(
@@ -66,11 +77,10 @@ class Model(nn.Module):
             hidden_state = self.embed_tokens(input_ids)
             # hidden_state :: (1, seq_len, hidden_size)
 
-        generated_seq_len = self.kv_cache[0].cached_seq_len
-
         seq_len = input_ids.shape[1]
-        position_ids = torch.arange(
-            generated_seq_len, generated_seq_len + seq_len, device=hidden_state.device
+        position_ids = (
+            self.kv_cache[0].cached_len
+            + torch.arange(seq_len, device=hidden_state.device)
         ).unsqueeze(0)
         # position_ids :: (1, seq_len)
 
@@ -85,7 +95,7 @@ class Model(nn.Module):
 
 class MiniQwen(nn.Module):
     @staticmethod
-    def from_pretrained(model_dir: PathLike) -> "MiniQwen":
+    def from_pretrained(model_dir: PathLike, device: torch.device) -> "MiniQwen":
         with open(os.path.join(model_dir, "config.json"), "r", encoding="utf-8") as f:
             config = json.load(f)
         with open(
@@ -114,6 +124,7 @@ class MiniQwen(nn.Module):
             top_k=generation_config["top_k"],
             top_p=generation_config["top_p"],
             dtype=dtype,
+            device=device,
         )
 
         with safe_open(
@@ -141,8 +152,11 @@ class MiniQwen(nn.Module):
         top_k: int,
         top_p: float,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
+
+        self._device = device
 
         self._tokenizer = tokenizer
         self._temperature = temperature
@@ -161,14 +175,15 @@ class MiniQwen(nn.Module):
             intermediate_size,
             rms_norm_eps,
             dtype,
+            device,
         )
-        self.lm_head = nn.Linear(hidden_size, vocab_size, bias=False, dtype=dtype)
+        self.lm_head = nn.Linear(
+            hidden_size, vocab_size, bias=False, dtype=dtype, device=device
+        )
 
     @torch.inference_mode()
     def generate(self, prompt: str, max_generate_len: int = 1000) -> Generator[str]:
-        device = self.lm_head.weight.device
-
-        input_ids = self._tokenizer.tokenize_for_chat(prompt).to(device)
+        input_ids = self._tokenizer.tokenize_for_chat(prompt).to(self._device)
         # input_ids :: (1, seq_len)
 
         for _ in range(max_generate_len):
@@ -179,12 +194,10 @@ class MiniQwen(nn.Module):
             output_token = self._tokenizer.decode(output_id)
             yield output_token
 
-            input_ids = torch.tensor([[output_id]], device=device)
+            input_ids = torch.tensor([[output_id]], device=self._device)
 
     @torch.inference_mode()
-    def generate_once(
-        self, input_ids: Int[Tensor, "1 seq_len"]
-    ) -> Int[Tensor, "1 1"]:
+    def generate_once(self, input_ids: Int[Tensor, "1 seq_len"]) -> Int[Tensor, "1 1"]:
         logits: Float[Tensor, "1 vocab_size"] = self(input_ids) / self._temperature
         probs: Float[Tensor, "1 vocab_size"] = self._apply_top_p(
             self._apply_top_k(logits)

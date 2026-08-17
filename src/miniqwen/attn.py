@@ -22,6 +22,7 @@ class GQA(nn.Module):
         rope: RoPE,
         cache: LayerCache,
         dtype: torch.dtype,
+        device: torch.device,
     ):
         super().__init__()
 
@@ -34,26 +35,44 @@ class GQA(nn.Module):
         self._cache = cache
 
         self.q_proj = nn.Linear(
-            hidden_size, num_attention_heads * head_dim, bias=False, dtype=dtype
+            hidden_size,
+            num_attention_heads * head_dim,
+            bias=False,
+            dtype=dtype,
+            device=device,
         )
         self.k_proj = nn.Linear(
-            hidden_size, num_kv_heads * head_dim, bias=False, dtype=dtype
+            hidden_size,
+            num_kv_heads * head_dim,
+            bias=False,
+            dtype=dtype,
+            device=device,
         )
         self.v_proj = nn.Linear(
-            hidden_size, num_kv_heads * head_dim, bias=False, dtype=dtype
+            hidden_size,
+            num_kv_heads * head_dim,
+            bias=False,
+            dtype=dtype,
+            device=device,
         )
         self.o_proj = nn.Linear(
-            num_attention_heads * head_dim, hidden_size, bias=False, dtype=dtype
+            num_attention_heads * head_dim,
+            hidden_size,
+            bias=False,
+            dtype=dtype,
+            device=device,
         )
         self.q_norm = nn.RMSNorm(
             head_dim,
             layernorm_eps,
             dtype=dtype,
+            device=device,
         )
         self.k_norm = nn.RMSNorm(
             head_dim,
             layernorm_eps,
             dtype=dtype,
+            device=device,
         )
 
     @nvtx.range("GQA.forward")
@@ -99,11 +118,11 @@ class GQA(nn.Module):
         k: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
         v: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
     ) -> Float[Tensor, "1 seq_len num_attn_heads head_dim"]:
-        k, v = self._cache.update(k, v)
+        k, v, cached_len = self._cache.update(k, v)
 
         scale = 1 / math.sqrt(self._head_dim)
         is_causal = q.shape[2] > 1
-        attn_output = _flash_gqa(q, k, v, is_causal=is_causal, scale=scale)
+        attn_output = _flash_gqa(q, k, v, cached_len, is_causal=is_causal, scale=scale)
         # attn_output :: (1, num_attention_heads, seq_len, head_dim)
 
         return attn_output.transpose(1, 2).contiguous()
@@ -114,6 +133,7 @@ def _flash_gqa(
     q: Float[Tensor, "1 num_attn_heads seq_len head_dim"],
     k: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
     v: Float[Tensor, "1 num_kv_heads kv_seq_len head_dim"],
+    kv_len: Int[Tensor, "1"],
     *,
     is_causal: bool,
     scale: float,
@@ -123,7 +143,6 @@ def _flash_gqa(
     Sq = q.shape[2]
     D = q.shape[3]
     Hkv = k.shape[1]
-    Skv = k.shape[2]
 
     SQ_TILE_SIZE = 16
     SK_TILE_SIZE = 16
@@ -133,11 +152,12 @@ def _flash_gqa(
 
     # fmt: off
     _flash_gqa_kernel[(B, Hq, Sq_tiles)](
-        q, k, v, out,
-        B, Hq, Sq, Hkv, Skv, D,  # type: ignore
+        q, k, v, kv_len, out,
+        B, Hq, Sq, Hkv, D,  # type: ignore
         q.stride(0), q.stride(1), q.stride(2), q.stride(3),
         k.stride(0), k.stride(1), k.stride(2), k.stride(3),
         v.stride(0), v.stride(1), v.stride(2), v.stride(3),
+        kv_len.stride(0),
         out.stride(0), out.stride(1), out.stride(2), out.stride(3),
         scale,
         SQ_TILE_SIZE,  # type: ignore
@@ -152,11 +172,12 @@ def _flash_gqa(
 # fmt: off
 @triton.jit
 def _flash_gqa_kernel(
-    Q_ptr, K_ptr, V_ptr, O_ptr,
-    B, Hq, Sq, Hkv, Skv, D: tl.constexpr,
+    Q_ptr, K_ptr, V_ptr, kv_len_ptr, O_ptr,
+    B, Hq, Sq, Hkv, D: tl.constexpr,
     stride_qb, stride_qh, stride_qs, stride_qd,
     stride_kb, stride_kh, stride_ks, stride_kd,
     stride_vb, stride_vh, stride_vs, stride_vd,
+    stride_kv_len_b,
     stride_ob, stride_oh, stride_os, stride_od,
     scale,
     SQ_TILE_SIZE: tl.constexpr,
@@ -189,6 +210,7 @@ def _flash_gqa_kernel(
     rowmax = tl.full((SQ_TILE_SIZE,), -float("inf"), tl.float32)
     expsum = tl.zeros((SQ_TILE_SIZE,), tl.float32)
 
+    Skv = tl.load(kv_len_ptr + B_idx * stride_kv_len_b)
     for Skv_tile_idx in range(tl.cdiv(Skv, SKV_TILE_SIZE)):
         offs_Skv = tl.arange(0, SKV_TILE_SIZE) + Skv_tile_idx * SKV_TILE_SIZE
         K_tile_ptrs = K_ptr + (offs_Skv[:, None] * stride_ks + offs_D[None, :] * stride_kd)
